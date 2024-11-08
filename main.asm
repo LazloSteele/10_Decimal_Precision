@@ -7,55 +7,79 @@
 # Language/Architecture: MIPS 32 Assembly
 ####################################################################################################
 # Algorithmic Description:
-#	
+#	get input
+#	check input for only numeric characters, '-', a single '.', and at least 5 digits after the ',' character
+#	store all digits before the '.' as whole
+#	store all digits after the '.' as fractional
+#	store the count of digits after '.' in a $s0
+#	convert whole to float
+#	convert fractional to float
+#	for i in range($s0):
+#		divide fractional by 10
+# 	add fractional to whole
+#	store value as dec_value
+#	for i in range(precision_flag):
+#		dec_value*=10
+#	dec_value += 0.5
+#	convert dec_value to int
+#	convert to float
+#	for i in range(precision_flag):
+#		dec_value/=10
+#	print dec_value!
+#	again?
 ####################################################################################################
 
 .data
-	welcome_msg:.asciiz "\nGreetings. I am numberbot. I will convert numerical bases."
-	mode_msg:	.asciiz	"\nPlease choose my mode from the options below:\n	[1] Decimal\n	[2] Binary\n	[3] Hex\n	[4] Exit"
-	mode_prmpt: .asciiz "\nPlease enter the number for the mode you would like > "
-	decimal_msg:.asciiz "\nPlease enter an integer between -2147483648 and 2147483647 > "
-	binary_msg:	.asciiz "\nPlease enter a 32-bit binary number (32 characters long) > "
-	hex_msg:	.asciiz "\nPlease enter a 32-bit hexadecimal number (8 characters long) > "
-	dec_value_msg:	.asciiz "\nDecimal Value:		"
-	bin_value_msg:	.asciiz "\nBinary Value:		"
-	hex_value_msg:	.asciiz "\nHexadecimal Value:	"
-	invalid_msg:.asciiz "\nInvalid input. Try again!\n"
-	bye: 		.asciiz "Toodles! ;)"
-	hex_digits: .asciiz "0123456789ABCDEF" 
-	space: 		.ascii	" "
-	newline: 	.asciiz "\n"
+	welcome_msg:	.asciiz "\nAhoy. I am the point floater. I will provide rounded floats to a precision of your choice."
+	places_msg:		.asciiz	"\nPlease enter your dcimal precision from 1-4 decimal places > "
+	float_msg:		.asciiz "\nPlease enter a number with at least 5 decimal places > "
+	precision_msg:	.asciiz "\nPrecision - "
+	colon:			.asciiz " : "
+	repeat_msg:		.asciiz "\nGo again? Y/N > "
+	invalid_msg:	.asciiz "\nInvalid input. Try again!\n"
+	bye: 			.asciiz "Toodles! ;)"
+	space: 			.ascii	" "
+	newline: 		.asciiz "\n"
 
-	min_signed:	.word -2147483648
-	max_signed:	.word 2147483647
-	dec_value:	.word
+	float_zero:		.float 0.0
+	float_ten:		.float 10.0
+	float_half:		.float 0.5
+		
+	whole:			.word 0
+	fractional:		.word 0
+	dec_value:		.float 0.0
 
-	mode_flag:	.byte 0		# 0 - off, 1 - integer, 2 - binary, 3 - hex, 4 - exit
+	precision_flag:	.byte 0		# number of place values
 	
-				.align 2
-	buffer:		.space 33
+					.align 2
+	buffer:			.space 33
 
-.globl	main
+					.globl	main
 
-.text
+					.text
+
 ####################################################################################################
 # function: main
 # purpose: to control program flow
+# registers used:
+#	$a0 - argument passed
+#	$s0 - decimal places found in get_int
 ####################################################################################################
-main:							#
-	jal	welcome					# welcome the user
-								#
-	jal	get_mode				# prompt for the mode
-	jal	reset_buffer			# clear the buffer
-								#
-	jal get_number				# prompt for the number to be calculated
-								#
-	jal print_dec				# print the decimal value
-	jal print_bin				# print the binary value
-	jal print_hex				# print the hex value
-								#
-	j	re_enter				# clear the buffer and re-enter the main loop
-								#
+main:								#
+	jal		welcome					# welcome the user
+									#
+	jal 	get_int					# get input
+									#
+	move 	$a0, $s0				# move the number of decimal places to the first argument register
+	jal 	convert_to_float		# convert input to float
+									#
+	jal 	get_mode				# how many decimal places to round to?
+									#
+	jal 	round					# rount the value
+									#
+	jal 	print_float				# print the value!
+	j		again					# again?
+									#
 ####################################################################################################
 # function: welcome
 # purpose: to welcome the user to our program
@@ -64,13 +88,13 @@ main:							#
 #	$a0 - passing arugments to subroutines
 #	$ra	- return address
 ####################################################################################################	
-welcome:						# 
-	la	$a0, welcome_msg		# load welcome message
-	li	$v0, 4					# 
-	syscall						# and print
-								#
-	jr $ra						# return to caller
-								#
+welcome:							# 
+	la	$a0, welcome_msg			# load welcome message
+	li	$v0, 4						# 
+	syscall							# and print
+									#
+	jr	$ra							# return to caller
+									#
 ####################################################################################################
 # function: get_mode
 # purpose: to map application state to user input
@@ -78,100 +102,45 @@ welcome:						#
 #	$v0 - syscall codes
 #	$a0 - passing arugments to subroutines
 #	$a1 - buffer lengths
-#	$t0 - buffer address
-#	$t1 - first character of user input
-#	$t2 - comparator values
+#	$t0 - first character of user input
+#	$t1 - comparator values
 #	$ra - return address
 ####################################################################################################
-get_mode:						#
-	la	$a0, mode_msg			# load message
-	li	$v0, 4					#
-	syscall						# print
-								#
-	la	$a0, mode_prmpt			# load message
-	syscall						# print
-								#
-	mode_input:					#
-		la 	$a0, buffer			# load buffer
-		li	$a1, 33				# 32 characters plus null terminator
-		li	$v0, 8				# 
-		syscall					# and read to buffer
-								#
-	lb	$t1, 0($a0)				# load first byte from buffer
-								#
-	li	$t2, '1'				# 
-	blt $t1, $t2, invalid_mode	# if it is less than '1' then invalid
-	li	$t2, '4'				#
-	bgt $t1, $t2, invalid_mode	# if it is greater than '4' then invalid
-								#
-	addi $t1, $t1, -48			# subtract '0' to store as integer in flag
-								#
-	la	$t2, mode_flag			# load the flag address
-	sb	$t1, 0($t2)				# store the flag value
-								#
-	jr $ra						# return to caller
-								#
-	invalid_mode:				#
-		la	$a0, invalid_msg	# 
-		li	$v0, 4				#
-		syscall					# print invalid message
-								#
-		j get_mode				# try again!
-								#
+get_mode:							#
+	la		$a0, places_msg			# load message
+	li		$v0, 4					#
+	syscall							# print
+									#
+	mode_input:						#
+		la 	$a0, buffer				# load buffer
+		li	$a1, 33					# 32 characters plus null terminator
+		li	$v0, 8					# 
+		syscall						# and read to buffer
+									#
+	lb		$t0, 0($a0)				# load first byte from buffer
+									#
+	li		$t1, '1'				# 
+	blt 	$t0, $t1, invalid_mode	# if it is less than '1' then invalid
+	li		$t1, '4'				#
+	bgt 	$t0, $t1, invalid_mode	# if it is greater than '4' then invalid
+									#
+	addi 	$t0, $t0, -48			# subtract '0' to store as integer in flag
+									#
+	la		$t1, precision_flag		# load the flag address
+	sb		$t0, 0($t1)				# store the flag value
+									#
+	jr		$ra						# return to caller
+									#
+	invalid_mode:					#
+		la	$a0, invalid_msg		# 
+		li	$v0, 4					#
+		syscall						# print invalid message
+									#
+		j get_mode					# try again!
+									#
 ####################################################################################################
-# function: get_number
-# purpose: to get a user sourced string as either decimal, binary, or hex
-# registers used:
-#	$v0 - syscall codes
-#	$a0 - passing arugments to subroutines
-#	$a1 - buffer size
-#	$t0 - mode flag
-####################################################################################################
-get_number:						#
-	lb 	$t0, mode_flag			# what's the mode???
-								#
-	beq $t0, 1, get_decimal		# go to the right one based on flag
-	beq $t0, 2, get_binary		#
-	beq $t0, 3, get_hex			#
-	beq	$t0, 4, end				#
-								#
-	get_decimal:				# 
-		la	$a0, decimal_msg	# 
-		li	$v0, 4				#
-		syscall					# print prompt
-								#
-		la 	$a0, buffer			#
-		li	$a1, 33				#
-		li	$v0, 8				#
-		syscall					# get input
-								#
-		j	process_decimal		# process input as decimal
-	get_binary:					#
-		la	$a0, binary_msg		# 
-		li	$v0, 4				#
-		syscall					# print prompt
-								#
-		la 	$a0, buffer			#
-		li	$a1, 33				#
-		li	$v0, 8				#
-		syscall					# get input
-								#
-		j	process_binary		# process input as binary
-	get_hex:					#
-		la	$a0, hex_msg		#
-		li	$v0, 4				#
-		syscall					# print prompt
-								#
-		la 	$a0, buffer			#
-		li	$a1, 33				#
-		li	$v0, 8				#
-		syscall					# get input
-								#
-		j	process_hex			# process input as hex
-								#
-####################################################################################################
-# function: process_decimal
-# purpose: to convert a string of decimals into a decimal integer
+# function: get_int
+# purpose: to convert a string of floats into a float integer
 # registers used:
 #	$v0 - syscall codes
 #	$a0 - passing arugments to subroutines
@@ -182,24 +151,46 @@ get_number:						#
 #	$t4 - comparator values ('-', '0', '9')
 #	$ra - return address
 ####################################################################################################	
-process_decimal:							#
-	li $t0, 0               	        	# $t0 will hold the final integer value
-	li $t1, 0								# $t1 is a flag for sign (0 = positive, 1 = negative)
-	la $t2, buffer							# $t2 points to the current character in buffer
-	li $t4, '-'								# to check for negative
+get_int:									#
+	move	$s0, $ra						# save return address for nesting
+	la		$a0, buffer						# load buffer address for clearing value
+	li		$a1, 33							# load buffer length
+	jal		reset_buffer					# reset buffer
+	move 	$ra, $s0						# move return address back from saved value
 											#
-	lb $t3, 0($t2)							# load the first character
-	beq $t3, $t4, check_negative			# if it's '-', set negative flag
-	j process_digits						# if no sign, process digits directly
+	la		$a0, float_msg					# load prompt
+	li		$v0 4							# prepare to print string
+	syscall									# print!
+											#
+	la		$a0, buffer						# load buffer address
+	li		$a1, 33							# load 
+	li		$v0, 8							# prepare to read string
+	syscall									# read!
+											#
+	li		$t0, 0							# $t0 will hold the final integer value
+	li		$t1, 0							# $t1 is a flag for sign (0 = positive, 1 = negative)
+	la		$t2, buffer						# $t2 points to the current character in buffer
+	li		$t4, '-'						# to check for negative
+	li		$t5, 0							# decimal point flag
+	li		$t6, -1							# decimal place counter, initialized at -1 because SLOPPPPPPP!!!
+											#
+	lb		$t3, 0($t2)						# load the first character
+	beq		$t3, $t4, check_negative		# if it's '-', set negative flag
+	j		process_digits					# if no sign, process digits directly
 											#
 	check_negative:							#
-		li $t1, 1							# set negative flag
+		li	$t1, 1							# set negative flag
 		addi $t2, $t2, 1					# move to next character
-		j process_digits					#
+		j	process_digits					#
 											#
 	process_digits:							#
-		lb $t3, 0($t2)                  	# load the next character
-		beq $t3, 10, finalize_conversion	# end of string (null terminator)
+		lb	$t3, 0($t2)                  	# load the next character
+		beqz $t5, for_digit					#
+											#
+		addi $t6, $t6, 1					#
+		for_digit:							#
+		beq	$t3, 10, store_fractional		# end of string (null terminator)
+		beq	$t3, '.', decimal_found			#
 		blt $t3, '0', invalid_integer		# if character is not a digit, go to error
 		bgt $t3, '9', invalid_integer		# if character is not a digit, go to error
 											#
@@ -208,246 +199,135 @@ process_decimal:							#
 		add $t0, $t0, $t3					# add the new digit to the result
 											#
 		addi $t2, $t2, 1					# move to next character
-		j process_digits					#
-											#
-	finalize_conversion:					#
-		beq $t1, 1, make_negative			# if flag raised, go to make_negative
-		j check_overflow					# check if it's an overflow
-											#
-	make_negative:							#
-		sub $t0, $zero, $t0					# invert the value: $t0 = 0 - $t0
-											#
-	check_overflow:							#
-		la $t4, min_signed					# minimum 32-bit signed integer value
-		lw $t4, ($t4)						#
-		blt $t0, $t4, invalid_integer		# check if result is too low
-		la $t4, max_signed					# maximum 32-bit signed integer value
-		lw $t4, ($t4)						#
-		bgt $t0, $t4, invalid_integer		# check if result is too high
-											#
-	sw	$t0, dec_value						# store the final integer in $s1
-	jr	$ra									# return to caller
+		j	process_digits					#
 											#
 	invalid_integer:						#
-		la $a0, invalid_msg					#
-		li $v0, 4							#
+		la	$a0, invalid_msg				#
+		li	$v0, 4							#
 		syscall								#
 											#
-		j	get_decimal						#
+		j get_int							#
+											#
+	decimal_found:							#
+		beq $t5, 1, invalid_integer			# if a decimal has already been found, input is invalid
+											#		
+		li	$t5, 1							# set decimal found flag
+											#
+		beqz $t1, store_whole				# if negative flag not raised, skip make_negative
+											#
+		make_negative:						#
+			sub $t0, $zero, $t0				# negate $t0
+											#
+		store_whole	:						#
+			sw	$t0, whole					# store the final integer in whole number
+			li	$t0, 0						# reset the result to store the fractional!
+											#
+		addi $t2, $t2, 1					#
+		j process_digits					#
+											#
+	store_fractional:						#
+		blt $t6, 5, invalid_integer			#
+		move $s0, $t6						#
+		sw	$t0, fractional					#
+											#
+		jr	$ra								#
 											#
 ####################################################################################################
-# function: process_binary
-# purpose: to convert binary string to decimal integer
+# function: convert_to_float
+# purpose: to convert two integers into a float
 # registers used:
-#	$v0 - sycall codes
-#	$a0 - passing arugments to subroutines
-#	$t0 - output value
-#	$t1 - buffer address
-#	$t2 - working character
-#	$t3 - comparator values, and 1's for the binary values
+#	$a0  - number of decimal places found
+#	$t0  - working addresses and int values
+#	$f0  - working float values
+#	$f1  - 10.0
+#	$f12 - the final float to return
+#	$ra  - return address
+####################################################################################################
+convert_to_float:					#
+	move	$t1, $a0				# load the number of decimal points found in input string
+	la		$t0, whole				#
+	lw		$t0, 0($t0)				# load the whole portion of the input string
+	mtc1	$t0, $f0				# store it in the floating point coproc
+	cvt.s.w	$f0, $f0				# convert to float
+									#
+	mov.s	$f12, $f0				# move the value to save
+									#
+	la		$t0, fractional			#
+	lw		$t0, 0($t0)				# load the fractional part of the input string
+	mtc1	$t0, $f0				# store it in the floating coproc
+	cvt.s.w	$f0, $f0				# convert it to a float
+									#
+	lwc1 	$f1, float_ten			# load a floating point 10.0
+									#
+	fractional_loop:				#
+		beqz	$t1, convert_done	#
+		div.s	$f0, $f0, $f1		# divide by 10 for each decimal point
+		addi	$t1, $t1, -1		#
+		j 		fractional_loop		#
+									#
+	convert_done:					#
+		add.s	$f12, $f12, $f0		# add the fractional to the stored whole portion
+									#
+		swc1	$f12, dec_value		# and store the value in memory
+		jr 		$ra					# return to caller
+									#
+####################################################################################################
+# function: round
+# purpose: to round the number to the decimal point provided
+# registers used:
+#	$t0 - decimal precision to round to
+#	$t1 - integer value for rounding algorithm
+#	$f0 - working float value
+#	$f1 - 10.0
+#	$f2 - 0.5
 #	$ra - return address
 ####################################################################################################
-process_binary:								#
-	li	$t0, 0								# initialize integer output
-	la	$t1, buffer							#
-											#
-	bin_to_dec_loop:						#
-		lb		$t2, 0($t1)					#
-		beq		$t2, 10, bin_done			# when end of loop, you are done
-		beq		$t2, 0, bin_done			#
-											#
-		li 		$t3, '0'					# for comparator
-		blt		$t2, $t3, invalid_binary	# if greater than '0' invalid
-		beq 	$t2, $t3, next_byte			# if 0 then skip
-											#
-		li		$t3, '1'					#
-		bgt		$t2, $t3, invalid_binary	# if greater than '1' invalid
-		li		$t3, 1						# 
-											#
-		j add_value							#
-											#
-		next_byte:							#
-			li		$t3, 0					# reset the value of the bit for next iteration
-											#
-		add_value:							#
-			sll 	$t0, $t0, 1				# to the left, to the left
-			add 	$t0, $t0, $t3			# every value you have in the bit to the left
-											#
-			addi 	$t1, $t1, 1				# buffer++
-			j 		bin_to_dec_loop			# and again!
-											#
-	bin_done:								#
-		sw	$t0, dec_value					# store the value
-		jr	$ra								# return to caller
-											#
-	invalid_binary:							#
-		la $a0, invalid_msg					#
-		li $v0, 4							#
-		syscall								# print invalid
-											#
-		j	get_binary						# and try again!
-											#
+round:								#
+	lwc1	$f0, dec_value			# load the float value
+	lwc1	$f1, float_ten			# load 10.0
+									#
+	lw		$t0, precision_flag		# load the decimal precision
+									#
+	mult_loop:						#
+		beqz	$t0, float_to_int	# multiply by ten for each in decimal precision
+		mul.s	$f0, $f0, $f1		#
+		addi	$t0, $t0, -1		#
+		j		mult_loop			#
+									#
+	float_to_int:					#
+		lwc1	$f2, float_half		#
+		add.s	$f0, $f0, $f2		# add .5 to the result to approximate rounding to the nearest int
+		cvt.w.s	$f0, $f0			# convert to int
+		mfc1	$t1, $f0			# store in a standard register
+		mtc1	$t1, $f0			# move back to a float register
+		cvt.s.w	$f0, $f0			# convert back to float
+									#
+	lw		$t0, precision_flag		# load the decimal precision
+									#
+	div_loop:						#
+		beqz 	$t0, round_done		# divide by 10 for each in decimal precision
+		div.s	$f0, $f0, $f1		#
+		addi 	$t0, $t0, -1		#
+		j		div_loop			#
+									#
+	round_done:						#
+		swc1	$f0, dec_value		# store the final value
+		jr		$ra					# and return to caller
+									#
 ####################################################################################################
-# function: process-hex
-# purpose: to convert hexadecimal string to decimal integer
+# function: print_float
+# purpose: to clear the buffer and re-enter the main loop
 # registers used:
-# registers used:
-#	$v0 - sycall codes
-#	$a0 - passing arugments to subroutines
-#	$t0 - output value
-#	$t1 - buffer address
-#	$t2 - working character
-#	$t3 - comparator values ('0', '9', 'A', 'F', 'a', 'f')
-#	$t4 - iterator to only allow the first 8 bytes... hacky and crappy but it is what it is...
-#	$ra - return address
-####################################################################################################	
-process_hex:								#
-	li	$t0, 0								# initialize integer output
-	la	$t1, buffer							#
-	li	$t4, 8								# hacky iterator to only accept first 8 characters of input
-											#
-	hex_to_dec_loop:						#
-		beqz	$t4, hex_done				#
-		lb		$t2, 0($t1)					#
-		beq		$t2, 10, hex_done			# when null terminator check sign
-											#
-		li 		$t3, '0'					#
-		blt 	$t2, $t3, invalid_hex		# If character is below '0', not hex
-		li 		$t3, '9'					#
-		ble 	$t2, $t3, convert_digit		# If '0' <= character <= '9' we good!
-											#
-		li 		$t3, 'A'					# 
-		blt 	$t2, $t3, invalid_hex		# If '9' < character < 'A' invalid
-		li 		$t3, 'F'					#
-		ble 	$t2, $t3, convert_digit		# If 'A' <= character <= 'F' we good!
-											#
-		li 		$t3, 'a'					# If 'F' < character < 'a' invalid
-		blt 	$t2, $t3, invalid_hex		#
-		li 		$t3, 'f'					#
-		ble 	$t2, $t3, convert_digit		# If 'a' <= character <= 'f' we good!
-											#
-		j		invalid_hex					# otherwise it's invalid
-											#
-		convert_digit:						# thanks Stack Overflow user paxdiablo for the algorithm inspo
-			addi	$t2, $t2, -48			# subtract ascii '0' to get decimal digits
-			blt		$t2, 10, add_hex		# if it is a decimal we are good!
-			addi	$t2, $t2, -7			# bring ascii A-F down to 10-15
-			blt		$t2, 16, add_hex		# if it is hex we are good!
-			addi	$t2, $t2, -32			# bring ascii a-f down to 10-15
-											#
-	add_hex:								#
-		sll $t0, $t0, 4						# move left by a nibble
-		add $t0, $t0, $t2					# add the digit!
-											#
-		addi 	$t1, $t1, 1					#
-		addi	$t4, $t4, -1				# iterate it!
-		j hex_to_dec_loop					#
-											#
-	hex_done:								#
-		sw	$t0, dec_value					# store the value
-		jr	$ra								# return to caller!
-											#
-	invalid_hex:							#
-		la $a0, invalid_msg					# 
-		li $v0, 4							#
-		syscall								# print invalid message
-											#
-		j	get_hex							# try again!
-											#
+#	$v0  - syscall codes
+#	$f12 - float to print
+#	$ra  - return address
 ####################################################################################################
-# function: print_dec
-# purpose: to print a decimal
-# registers used:
-#	$v0 - sycall codes
-#	$a0 - passing arugments to subroutines
-#	$t0 - output value
-#	$ra - return address
-####################################################################################################
-print_dec:									#
-	la	$a0, dec_value_msg					# 
-	li	$v0, 4								#
-	syscall									# print the message
-											#
-	la	$t0, dec_value						#
-	lw	$a0, 0($t0)							#
-	li	$v0, 1								#
-	syscall									# print the integer
-											#
-	jr	$ra									# return to caller
-											#
-####################################################################################################
-# function: print bin
-# purpose: to print a binary
-# registers used:
-#	$v0 - sycall codes
-#	$a0 - passing arugments to subroutines
-#	$t0 - iterator
-#	$t1 - decimal value
-#	$t2 - shifted/masked value
-#	$ra - return address
-####################################################################################################
-print_bin:									#
-	la	$a0, bin_value_msg					#
-	li	$v0, 4								#
-	syscall									#
-											#
-	li	$t0, 31								# iterator for 32 bit length (doubles as a srl arg)
-	la	$t1, dec_value						#
-	lw	$t1, 0($t1)							# load the integer
-											#
-	bin_loop:								#
-		bgez	$t0, get_bit				#
-		jr		$ra							#
-	get_bit:								#
-		srlv	$t2, $t1, $t0				# shift dec value right by the current counter value
-		andi	$t2, $t2, 1					# get LSB of shifted value
-											#
-	    li $v0, 11							# System call for print_char
-		   									#
-	    li $a0, '0'							# Load ASCII '0'
-		beqz $t2, print_bit					# If $t2 is 0, print '0'
-		li $a0, '1'							# Otherwise, load ASCII '1'
-	print_bit:								#
-		syscall								#
-											#
-		addi	$t0, $t0, -1				#
-		j		bin_loop					#
-											#
-####################################################################################################
-# function: print bin
-# purpose: to print a binary
-# registers used:
-#	$v0 - sycall codes
-#	$a0 - passing arugments to subroutines
-#	$t0 - iterator
-#	$t1 - decimal value
-#	$t2 - shifted/masked value
-#	$ra - return address
-####################################################################################################			
-print_hex:									#
-	la	$a0, hex_value_msg					#
-	li	$v0, 4								#
-	syscall									#
-											#
-	li	$t0, 8								# iterator for 8 nibbles (doubles as a srl arg)
-	la	$t1, dec_value						#
-	lw	$t1, 0($t1)							# load the integer
-											#
-	hex_loop:								#
-		bgez	$t0, get_nibble				#
-		jr		$ra							#
-	get_nibble:								#
-		srl $t2, $t1, 28					# Shift right to get the MSB
-		andi $t2, $t2, 0xF					# Mask to get the lower 4 bits (hex digit)
-		lb $a0, hex_digits($t2)				# Load the corresponding hex character
-											#
-		li $v0, 11							# System call for print_char
-		syscall								# Print the character
-											#
-		sll $t1, $t1, 4						# Shift left to bring the next hex digit into the LSB
-		addi $t0, $t0, -1					# Decrease count of hex digits to print
-		bgtz $t0, hex_loop					# Repeat until all 8 digits are printed
-											#
+print_float:						#
+	lwc1	$f12, dec_value			# load float
+	li		$v0, 2					# print as float
+	syscall							# print
+									#
+	jr		$ra						# return to caller
 ####################################################################################################
 # function: re-enter
 # purpose: to clear the buffer and re-enter the main loop
@@ -455,12 +335,12 @@ print_hex:									#
 #	$a0 - buffer address
 #	$a1 - buffer length
 ####################################################################################################
-re_enter:									#
-	la	$a0, buffer							# load buffer address
-	li	$a1, 33								# length of buffer
-	jal	reset_buffer						# clear the buffer
-	j	main								# let's do the time warp again!
-											#
+re_enter:							#
+	la	$a0, buffer					# load buffer address
+	li	$a1, 33						# length of buffer
+	jal	reset_buffer				# clear the buffer
+	j	main						# let's do the time warp again!
+									#
 ####################################################################################################
 # function: reset_buffer
 # purpose: to reset the buffer for stability and security
@@ -484,6 +364,66 @@ reset_buffer:									#
 	reset_buffer_return:						#
 		jr 		$ra								#
 												#
+####################################################################################################
+# macro: upper
+# purpose: to make printing messages more eloquent
+# registers used:
+#	$t0 - string to check for upper case
+#	$t1 - ascii 'a', 'A'-'Z' is all lower value than 'a'
+# variables used:
+#	%message - message to be printed
+####################################################################################################		
+upper:							#
+	move $s0, $ra				#
+	move $t0, $a0				# load the buffer address
+	li $t1, 'a'					# lower case a to compare
+	upper_loop:					#
+		lb $t2, 0($t0)			# load next byte from buffer
+		blt $t2, $t1, is_upper	# bypass uppercaserizer if character is already upper case (or invalid)
+		to_upper:				# 
+			subi $t2, $t2, 32	# Convert to uppercase (ASCII difference between 'a' and 'A' is 32)
+		is_upper:				#
+			sb $t2, 0($t0)		# store byte
+		addi $t0, $t0, 1		# next byte
+		bne $t2, 0, upper_loop	# if not end of buffer go again!
+	move $ra, $s0				#
+	jr $ra						#
+								#
+####################################################################################################
+# function: again
+# purpose: to user to repeat or close the program
+# registers used:
+#	$v0 - syscall codes
+#	$a0 - message storage for print and buffer storage
+#	$t0 - stores the memory address of the buffer and first character of the input received
+#	$t1 - ascii 'a', 'Y', and 'N'
+####################################################################################################
+again:							#		
+	la $a0, repeat_msg			#
+	li $v0, 4					#
+	syscall						#
+								#
+	la $a0, buffer				#
+	la $a1, 4					#
+	li $v0, 8					#
+	syscall						#
+								#
+	la $a0, buffer				#
+	jal upper					# load the buffer for string manipulation
+								#
+	la $t0, buffer				#
+	lb $t0, 0($t0)				#
+	li $t1, 'Y'					# store the value of ASCII 'Y' for comparison
+	beq $t0, $t1, re_enter		# If yes, go back to the start of main
+	li $t1, 'N'					# store the value of ASCII 'N' for comparison
+	beq $t0, $t1, end			# If no, goodbye!
+	j again_invalid				# if invalid try again...
+								#
+	again_invalid:				#
+		la $a0, invalid_msg		#
+		li $v0, 4				#
+		syscall					#
+								#
 ####################################################################################################
 # function: end
 # purpose: to eloquently terminate the program
