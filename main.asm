@@ -1,9 +1,10 @@
-# Program #9: Number Base Converter
+# Program #10: Decimal Place Rounder
 # Author: Lazlo F. Steele
-# Due Date : Nov. 2, 2024 Course: CSC2025-2H1
-# Created: Oct. 20, 2024
-# Last Modified: Nov. 2, 2024
-# Functional Description: Given a 32-bit numeric value provided by the user, convert from base 2/10/16 to base 2/10/16.
+# Due Date : Nov. 9, 2024 Course: CSC2025-2H1
+# Created: Nov. 3, 2024
+# Last Modified: Nov. 7, 2024
+# Functional Description: Given a numeric value provided by the user with at least 5 decimal places,
+# 	round to a user provided decimal precision.
 # Language/Architecture: MIPS 32 Assembly
 ####################################################################################################
 # Algorithmic Description:
